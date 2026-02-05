@@ -21,15 +21,6 @@ jobs:
         run: |
           python -V
 
-      - name: Show Python architecture (python)
-        run: |
-          python - <<EOF
-          import platform, sys
-          print("Version:", sys.version)
-          print("Machine:", platform.machine())
-          print("Executable:", sys.executable)
-          EOF
-
       - name: List Python versions via py launcher
         shell: cmd
         run: |
