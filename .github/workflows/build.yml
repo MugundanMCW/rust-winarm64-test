@@ -1,33 +1,42 @@
-name: Test Python 3.13t on Windows 11 ARM
+name: Windows ARM64 MSVC Test
 
 on:
-  workflow_dispatch:
   push:
+  pull_request:
 
 jobs:
-  test-python-313t:
-    runs-on: windows-11-arm
+  build:
+    runs-on: windows-11-arm   # or windows-latest if using x64 runner for cross compile
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
-      - name: Set up Python 3.13t
-        uses: actions/setup-python@v6
+      # Setup MSVC Developer Command Prompt for ARM64
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
         with:
-          python-version: '3.13t'
-          architecture: 'arm64'
+          arch: arm64
 
-      - name: Show Python version (python)
-        run: |
-          python -V
-
-      - name: List Python versions via py launcher
+      # Verify the environment really targets ARM64
+      - name: Verify ARM64 Toolchain
         shell: cmd
         run: |
-          py -0p
+          echo VSCMD_ARG_TGT_ARCH=%VSCMD_ARG_TGT_ARCH%
+          cl
+          echo int main(){} > test.cpp
+          cl /c test.cpp
+          dumpbin /headers test.obj | findstr machine
 
-      - name: Verify Python 3.13t via py launcher
-        shell: cmd
+      # Configure project
+      - name: Configure
         run: |
-          py -3.13t -V
-          py -3.13t -c "import platform, sys; print(platform.machine(), sys.executable)"
+          cmake -G Ninja ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_C_COMPILER=cl ^
+            -DCMAKE_CXX_COMPILER=cl ^
+            -B build ^
+            -S .
+
+      # Build
+      - name: Build
+        run: cmake --build build --config Release
