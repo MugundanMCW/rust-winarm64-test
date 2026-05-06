@@ -1,42 +1,55 @@
-name: Windows ARM64 MSVC Test
+name: compare-package-manager-timings
 
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: windows-11-arm   # or windows-latest if using x64 runner for cross compile
+  compare:
+    strategy:
+      matrix:
+        os: [windows-2025]
+    runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # Setup MSVC Developer Command Prompt for ARM64
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: arm64
-
-      # Verify the environment really targets ARM64
-      - name: Verify ARM64 Toolchain
-        shell: cmd
+      # -----------------------------
+      # NuGet Timing
+      # -----------------------------
+      - name: Measure NuGet install time
+        shell: powershell
         run: |
-          echo VSCMD_ARG_TGT_ARCH=%VSCMD_ARG_TGT_ARCH%
-          cl
-          echo int main(){} > test.cpp
-          cl /c test.cpp
-          dumpbin /headers test.obj | findstr machine
+          $start = Get-Date
 
-      # Configure project
-      - name: Configure
+          nuget install PCRE2 -OutputDirectory C:\Tools\NuGet
+          nuget install boost -OutputDirectory C:\Tools\NuGet
+
+          $end = Get-Date
+          $elapsed = ($end - $start).TotalSeconds
+
+          Write-Host "NuGet install took $elapsed seconds"
+
+      # -----------------------------
+      # vcpkg Timing
+      # -----------------------------
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+
+      - name: Measure vcpkg install time
+        shell: powershell
         run: |
-          cmake -G Ninja ^
-            -DCMAKE_BUILD_TYPE=Release ^
-            -DCMAKE_C_COMPILER=cl ^
-            -DCMAKE_CXX_COMPILER=cl ^
-            -B build ^
-            -S .
+          $triplet = if ("${{ matrix.os }}" -eq "windows-11-arm") {
+            "arm64-windows-static"
+          } else {
+            "x64-windows-static"
+          }
 
-      # Build
-      - name: Build
-        run: cmake --build build --config Release
+          $start = Get-Date
+
+          vcpkg install pcre2:$triplet boost:$triplet
+
+          $end = Get-Date
+          $elapsed = ($end - $start).TotalSeconds
+
+          Write-Host "vcpkg install took $elapsed seconds"
