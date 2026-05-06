@@ -1,3 +1,4 @@
+
 name: compare-package-manager-timings
 
 on:
@@ -7,28 +8,36 @@ jobs:
   compare:
     strategy:
       matrix:
-        os: [windows-2025]
+        os: [windows-11-arm]
+
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       # -----------------------------
-      # NuGet Timing
+      # NuGet PCRE2 Timing
       # -----------------------------
-      - name: Measure NuGet install time
+      - name: Measure NuGet PCRE2 install time
         shell: powershell
         run: |
           $start = Get-Date
 
           nuget install PCRE2 -OutputDirectory C:\Tools\NuGet
+
+          $elapsed = ((Get-Date) - $start).TotalSeconds
+          Write-Host "NuGet PCRE2 install took $elapsed seconds"
+
+      # -----------------------------
+      # NuGet Boost Timing
+      # -----------------------------
+      - name: Measure NuGet Boost install time
+        shell: powershell
+        run: |
+          $start = Get-Date
+
           nuget install boost -OutputDirectory C:\Tools\NuGet
 
-          $end = Get-Date
-          $elapsed = ($end - $start).TotalSeconds
-
-          Write-Host "NuGet install took $elapsed seconds"
+          $elapsed = ((Get-Date) - $start).TotalSeconds
+          Write-Host "NuGet Boost install took $elapsed seconds"
 
       # -----------------------------
       # vcpkg Timing
@@ -36,7 +45,7 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
 
-      - name: Measure vcpkg install time
+      - name: Measure vcpkg PCRE2 install time
         shell: powershell
         run: |
           $triplet = if ("${{ matrix.os }}" -eq "windows-11-arm") {
@@ -47,9 +56,8 @@ jobs:
 
           $start = Get-Date
 
-          vcpkg install pcre2:$triplet boost:$triplet
+          vcpkg install pcre2:$triplet
 
-          $end = Get-Date
-          $elapsed = ($end - $start).TotalSeconds
+          $elapsed = ((Get-Date) - $start).TotalSeconds
+          Write-Host "vcpkg PCRE2 install took $elapsed seconds"
 
-          Write-Host "vcpkg install took $elapsed seconds"
