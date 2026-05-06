@@ -24,17 +24,28 @@ jobs:
               $_.FullName -match "arm64|aarch64|win-arm64"
             } |
             Select-Object FullName
-
+  
       - name: Check binary architectures
         shell: powershell
         run: |
+          # Locate Visual Studio
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest `
+            -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+      
+          # Load MSVC developer environment
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation
+      
           $files = Get-ChildItem C:\Tools -Recurse -Include *.dll,*.lib
-
+      
           foreach ($file in $files) {
             Write-Host ""
             Write-Host "Checking $($file.FullName)"
-
+      
             dumpbin /headers $file.FullName 2>$null |
               Select-String "machine"
           }
-
+  
