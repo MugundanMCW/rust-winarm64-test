@@ -46,15 +46,10 @@ jobs:
       - name: Measure vcpkg PCRE2 install time
         shell: cmd
         run: |
-          $triplet = if ("${{ matrix.os }}" -eq "windows-11-arm") {
-            "arm64-windows-static"
-          } else {
-            "x64-windows-static"
-          }
 
           $start = Get-Date
 
-          vcpkg install pcre2:$triplet
+          vcpkg install pcre2:x64-windows-static
 
           $elapsed = ((Get-Date) - $start).TotalSeconds
           Write-Host "vcpkg PCRE2 install took $elapsed seconds"
