@@ -41,12 +41,10 @@ jobs:
 
       # -----------------------------
       # vcpkg Timing
-      # -----------------------------
-      - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
+      # ----------------------------
 
       - name: Measure vcpkg PCRE2 install time
-        shell: powershell
+        shell: cmd
         run: |
           $triplet = if ("${{ matrix.os }}" -eq "windows-11-arm") {
             "arm64-windows-static"
