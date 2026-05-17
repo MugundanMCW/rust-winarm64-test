@@ -19,15 +19,13 @@ jobs:
     runs-on: windows-11-arm
 
     steps:
-      - name: Download wheel artifact
-        uses: actions/download-artifact@v4
-        with:
-          run-id: ${{ inputs.wheel_run_id }}
-          repository: ${{ inputs.wheel_repo }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          pattern: "*.whl"
-          path: wheels
-          merge-multiple: true
+      - name: Download wheel from release
+        shell: pwsh
+        run: |
+          $url = "https://github.com/MugundanMCW/crossbow/releases/download/build-62-github-wheel-windows-cp313-cp313t-arm64/pyarrow-18.0.0-cp313-cp313t-win_arm64.whl"
+          New-Item -ItemType Directory -Force -Path wheels | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile "wheels\pyarrow-18.0.0-cp313-cp313t-win_arm64.whl"
+          Write-Host "Downloaded: $(Get-ChildItem wheels\*.whl)"
 
       - name: Setup Python
         uses: actions/setup-python@v5
