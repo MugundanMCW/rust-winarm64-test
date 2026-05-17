@@ -1,56 +1,119 @@
-
-name: compare-package-manager-timings
+name: Verify PyArrow ARM64 Wheel SIMD Support
 
 on:
   workflow_dispatch:
+    inputs:
+      wheel_run_id:
+        description: "GitHub Actions run ID that produced the wheel"
+        required: true
+        type: string
+      wheel_repo:
+        description: "Repo where the wheel artifact lives (owner/repo)"
+        required: false
+        default: "MugundanMCW/crossbow"
+        type: string
 
 jobs:
-  compare:
-    strategy:
-      matrix:
-        os: [windows-11-arm]
-
-    runs-on: ${{ matrix.os }}
+  verify-simd:
+    name: Verify xsimd / SIMD in pyarrow wheel
+    runs-on: windows-11-arm
 
     steps:
-      # -----------------------------
-      # NuGet PCRE2 Timing
-      # -----------------------------
-      - name: Measure NuGet PCRE2 install time
-        shell: powershell
+      - name: Download wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.wheel_run_id }}
+          repository: ${{ inputs.wheel_repo }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pattern: "*.whl"
+          path: wheels
+          merge-multiple: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13t"
+          architecture: "arm64"
+
+      - name: Install wheel
+        shell: pwsh
         run: |
-          $start = Get-Date
+          $whl = Get-ChildItem wheels\*.whl | Select-Object -First 1
+          Write-Host "Installing: $($whl.FullName)"
+          pip install $whl.FullName
 
-          nuget install PCRE2 -OutputDirectory C:\Tools\NuGet
-
-          $elapsed = ((Get-Date) - $start).TotalSeconds
-          Write-Host "NuGet PCRE2 install took $elapsed seconds"
-
-      # -----------------------------
-      # NuGet Boost Timing
-      # -----------------------------
-      - name: Measure NuGet Boost install time
-        shell: powershell
+      - name: Check SIMD level reported by PyArrow
+        shell: python
         run: |
-          $start = Get-Date
+          import pyarrow as pa
+          import sys
 
-          nuget install boost -OutputDirectory C:\Tools\NuGet
+          print("=" * 60)
+          print(f"PyArrow version  : {pa.__version__}")
+          print(f"Arrow C++ version: {pa.cpp_build_info.version}")
+          print("-" * 60)
 
-          $elapsed = ((Get-Date) - $start).TotalSeconds
-          Write-Host "NuGet Boost install took $elapsed seconds"
+          simd    = pa.cpp_build_info.simd_level
+          rt_simd = pa.cpp_build_info.runtime_simd_level
 
-      # -----------------------------
-      # vcpkg Timing
-      # ----------------------------
+          print(f"Compile-time SIMD level : {simd}")
+          print(f"Runtime SIMD level      : {rt_simd}")
+          print("-" * 60)
+          print("Full runtime info:")
+          print(pa.runtime_info())
+          print("=" * 60)
 
-      - name: Measure vcpkg PCRE2 install time
-        shell: cmd
+          # Fail the job if SIMD is completely disabled
+          if simd.upper() == "NONE":
+              print("ERROR: compile-time SIMD is NONE — xsimd was not compiled in!")
+              sys.exit(1)
+
+          print("PASS: SIMD is enabled in this wheel.")
+
+      - name: Run compute workload (NEON smoke test)
+        shell: python
         run: |
+          import pyarrow as pa
+          import pyarrow.compute as pc
+          import numpy as np
 
-          $start = Get-Date
+          print("Running SIMD-accelerated compute operations...")
 
-          vcpkg install pcre2:x64-windows-static
+          # Arithmetic on a large float array exercises NEON vectorisation
+          arr = pa.array(np.random.rand(5_000_000), type=pa.float64())
 
-          $elapsed = ((Get-Date) - $start).TotalSeconds
-          Write-Host "vcpkg PCRE2 install took $elapsed seconds"
+          total   = pc.sum(arr).as_py()
+          mean    = pc.mean(arr).as_py()
+          minimum = pc.min(arr).as_py()
+          maximum = pc.max(arr).as_py()
 
+          print(f"  sum  = {total:.6f}")
+          print(f"  mean = {mean:.6f}")
+          print(f"  min  = {minimum:.6f}")
+          print(f"  max  = {maximum:.6f}")
+
+          # String kernel also uses xsimd on ARM64
+          strs = pa.array(["hello", "world", "arrow", "neon"] * 1_000_000)
+          lengths = pc.utf8_length(strs)
+          print(f"  utf8_length sum = {pc.sum(lengths).as_py()}")
+
+          print("PASS: all compute operations completed successfully.")
+
+      - name: Inspect DLL exports for SIMD symbols
+        shell: pwsh
+        run: |
+          $arrowDll = Get-ChildItem -Recurse -Filter "arrow.dll" |
+                      Select-Object -First 1 -ExpandProperty FullName
+          if (-not $arrowDll) {
+              Write-Host "arrow.dll not found, skipping symbol check."
+              exit 0
+          }
+          Write-Host "Inspecting: $arrowDll"
+          $exports = dumpbin /EXPORTS $arrowDll 2>&1
+          $simdHits = $exports | Select-String -Pattern "neon|simd|xsimd" -CaseSensitive:$false
+          if ($simdHits) {
+              Write-Host "Found SIMD-related exports:"
+              $simdHits | ForEach-Object { Write-Host "  $_" }
+          } else {
+              Write-Host "No SIMD symbols found in exports (expected for inlined xsimd)."
+          }
