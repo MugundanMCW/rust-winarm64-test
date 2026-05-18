@@ -35,24 +35,24 @@ jobs:
         run: |
           import pyarrow as pa
           import os
-
+      
           print("=== Runtime SIMD Info ===")
           print(pa.runtime_info())
-
+      
           include_dir = pa.get_include()
           config_h = os.path.join(include_dir, "arrow", "util", "config.h")
-
+      
           print(f"\nChecking config file: {config_h}")
-
+      
           if os.path.exists(config_h):
               with open(config_h, "r", encoding="utf-8") as f:
                   content = f.read()
-
+      
               if "#define ARROW_USE_XSIMD 1" in content:
-                  print("✅ xsimd support ENABLED")
+                  print("xsimd support ENABLED")
               elif "#define ARROW_USE_XSIMD 0" in content:
-                  print("❌ xsimd support DISABLED")
+                  print("xsimd support DISABLED")
               else:
-                  print("⚠️ ARROW_USE_XSIMD flag not found")
+                  print("ARROW_USE_XSIMD flag not found")
           else:
-              print("⚠️ config.h not found")
+              print("config.h not found")
