@@ -23,68 +23,68 @@ jobs:
         with:
           python-version: "3.13t"
           architecture: "arm64"
-
+ 
       - name: Install wheel
         shell: pwsh
         run: |
           $whl = Get-ChildItem wheels\*.whl | Select-Object -First 1
           Write-Host "Installing: $($whl.FullName)"
           pip install $whl.FullName numpy
-
+ 
       - name: Check SIMD support reported by PyArrow
         shell: python
         run: |
           import pyarrow as pa
           import sys
-
+ 
           print("=" * 60)
           print(f"PyArrow version  : {pa.__version__}")
           print(f"Arrow C++ version: {pa.cpp_build_info.version}")
           print("-" * 60)
-
-          # pa.runtime_info() is the correct API across all Arrow versions.
-          # It returns a struct with simd_level and runtime_simd_level.
+ 
+          # Arrow 18 RuntimeInfo fields:
+          #   simd_level          - compile-time SIMD level
+          #   detected_simd_level - best SIMD level detected at runtime on this CPU
           info = pa.runtime_info()
-          simd    = info.simd_level
-          rt_simd = info.runtime_simd_level
-
-          print(f"Compile-time SIMD level : {simd}")
-          print(f"Runtime SIMD level      : {rt_simd}")
+          simd          = info.simd_level
+          detected_simd = info.detected_simd_level
+ 
+          print(f"Compile-time SIMD level  : {simd}")
+          print(f"Detected runtime SIMD    : {detected_simd}")
           print("-" * 60)
-          print("Full runtime info:")
-          print(info)
+          print(f"Full runtime info: {info}")
           print("=" * 60)
-
+ 
           # On ARM64 Windows we expect NEON at minimum
           if simd.upper() == "NONE":
               print("ERROR: SIMD is NONE — xsimd was not compiled in!")
               sys.exit(1)
-
+ 
           print(f"PASS: SIMD is enabled ({simd}), xsimd is active in this wheel.")
-
+ 
       - name: Run compute workload (NEON smoke test)
         shell: python
         run: |
           import pyarrow as pa
           import pyarrow.compute as pc
           import numpy as np
-
+ 
           print("Running SIMD-accelerated compute operations...")
-
+ 
           # Float64 aggregations exercise NEON vectorisation via xsimd
           arr = pa.array(np.random.rand(5_000_000), type=pa.float64())
           print(f"  sum  = {pc.sum(arr).as_py():.6f}")
           print(f"  mean = {pc.mean(arr).as_py():.6f}")
           print(f"  min  = {pc.min(arr).as_py():.6f}")
           print(f"  max  = {pc.max(arr).as_py():.6f}")
-
+ 
           # String kernel also uses xsimd on ARM64
           strs = pa.array(["hello", "world", "arrow", "neon"] * 1_000_000)
           lengths = pc.utf8_length(strs)
           print(f"  utf8_length sum = {pc.sum(lengths).as_py()}")
-
+ 
           print("PASS: all compute operations completed successfully.")
-
+ 
       - name: Inspect DLL exports for SIMD symbols
         shell: pwsh
         run: |
