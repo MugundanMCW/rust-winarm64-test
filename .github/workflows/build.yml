@@ -2,11 +2,7 @@ name: Verify PyArrow ARM64 Wheel SIMD Support
 
 on:
   workflow_dispatch:
-    inputs:
-      wheel_url:
-        description: "Direct URL to the .whl release asset"
-        required: true
-        type: string
+
 
 jobs:
   verify-simd:
