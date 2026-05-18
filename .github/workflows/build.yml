@@ -17,8 +17,9 @@ jobs:
       - name: Download wheel from release
         shell: pwsh
         run: |
+          $url = "https://github.com/MugundanMCW/crossbow/releases/download/build-62-github-wheel-windows-cp313-cp313t-arm64/pyarrow-18.0.0-cp313-cp313t-win_arm64.whl"
           New-Item -ItemType Directory -Force -Path wheels | Out-Null
-          Invoke-WebRequest -Uri "${{ inputs.wheel_url }}" -OutFile "wheels\wheel.whl"
+          Invoke-WebRequest -Uri $url -OutFile "wheels\pyarrow-18.0.0-cp313-cp313t-win_arm64.whl"
           Write-Host "Downloaded: $(Get-ChildItem wheels\*.whl)"
 
       - name: Setup Python
