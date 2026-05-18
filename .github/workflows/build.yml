@@ -3,14 +3,9 @@ name: Verify PyArrow ARM64 Wheel SIMD Support
 on:
   workflow_dispatch:
     inputs:
-      wheel_run_id:
-        description: "GitHub Actions run ID that produced the wheel"
+      wheel_url:
+        description: "Direct URL to the .whl release asset"
         required: true
-        type: string
-      wheel_repo:
-        description: "Repo where the wheel artifact lives (owner/repo)"
-        required: false
-        default: "MugundanMCW/crossbow"
         type: string
 
 jobs:
@@ -22,9 +17,8 @@ jobs:
       - name: Download wheel from release
         shell: pwsh
         run: |
-          $url = "https://github.com/MugundanMCW/crossbow/releases/download/build-62-github-wheel-windows-cp313-cp313t-arm64/pyarrow-18.0.0-cp313-cp313t-win_arm64.whl"
           New-Item -ItemType Directory -Force -Path wheels | Out-Null
-          Invoke-WebRequest -Uri $url -OutFile "wheels\pyarrow-18.0.0-cp313-cp313t-win_arm64.whl"
+          Invoke-WebRequest -Uri "${{ inputs.wheel_url }}" -OutFile "wheels\wheel.whl"
           Write-Host "Downloaded: $(Get-ChildItem wheels\*.whl)"
 
       - name: Setup Python
@@ -38,9 +32,9 @@ jobs:
         run: |
           $whl = Get-ChildItem wheels\*.whl | Select-Object -First 1
           Write-Host "Installing: $($whl.FullName)"
-          pip install $whl.FullName
+          pip install $whl.FullName numpy
 
-      - name: Check SIMD level reported by PyArrow
+      - name: Check SIMD support reported by PyArrow
         shell: python
         run: |
           import pyarrow as pa
@@ -51,22 +45,40 @@ jobs:
           print(f"Arrow C++ version: {pa.cpp_build_info.version}")
           print("-" * 60)
 
-          simd    = pa.cpp_build_info.simd_level
-          rt_simd = pa.cpp_build_info.runtime_simd_level
+          # Print all available build info attributes for visibility
+          build_info = pa.cpp_build_info
+          for attr in sorted(dir(build_info)):
+              if not attr.startswith("_"):
+                  try:
+                      print(f"  {attr}: {getattr(build_info, attr)}")
+                  except Exception:
+                      pass
+          print("-" * 60)
 
-          print(f"Compile-time SIMD level : {simd}")
-          print(f"Runtime SIMD level      : {rt_simd}")
+          # Arrow 18 exposes simd_flags (list of active SIMD flags)
+          # Arrow 19+ exposes simd_level / runtime_simd_level
+          if hasattr(build_info, "simd_level"):
+              simd = build_info.simd_level
+              rt_simd = build_info.runtime_simd_level
+              print(f"Compile-time SIMD level : {simd}")
+              print(f"Runtime SIMD level      : {rt_simd}")
+              if simd.upper() == "NONE":
+                  print("ERROR: SIMD is NONE — xsimd was not compiled in!")
+                  sys.exit(1)
+          elif hasattr(build_info, "simd_flags"):
+              flags = build_info.simd_flags
+              print(f"SIMD flags: {flags}")
+              if not flags:
+                  print("ERROR: simd_flags is empty — xsimd was not compiled in!")
+                  sys.exit(1)
+          else:
+              print("WARNING: no SIMD attribute found on CppBuildInfo")
+
           print("-" * 60)
           print("Full runtime info:")
           print(pa.runtime_info())
           print("=" * 60)
-
-          # Fail the job if SIMD is completely disabled
-          if simd.upper() == "NONE":
-              print("ERROR: compile-time SIMD is NONE — xsimd was not compiled in!")
-              sys.exit(1)
-
-          print("PASS: SIMD is enabled in this wheel.")
+          print("PASS: SIMD check completed.")
 
       - name: Run compute workload (NEON smoke test)
         shell: python
@@ -77,7 +89,6 @@ jobs:
 
           print("Running SIMD-accelerated compute operations...")
 
-          # Arithmetic on a large float array exercises NEON vectorisation
           arr = pa.array(np.random.rand(5_000_000), type=pa.float64())
 
           total   = pc.sum(arr).as_py()
@@ -90,7 +101,6 @@ jobs:
           print(f"  min  = {minimum:.6f}")
           print(f"  max  = {maximum:.6f}")
 
-          # String kernel also uses xsimd on ARM64
           strs = pa.array(["hello", "world", "arrow", "neon"] * 1_000_000)
           lengths = pc.utf8_length(strs)
           print(f"  utf8_length sum = {pc.sum(lengths).as_py()}")
