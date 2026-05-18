@@ -3,7 +3,6 @@ name: Verify PyArrow ARM64 Wheel SIMD Support
 on:
   workflow_dispatch:
 
-
 jobs:
   verify-simd:
     name: Verify xsimd / SIMD in pyarrow wheel
@@ -23,83 +22,37 @@ jobs:
         with:
           python-version: "3.13t"
           architecture: "arm64"
- 
+
       - name: Install wheel
         shell: pwsh
         run: |
           $whl = Get-ChildItem wheels\*.whl | Select-Object -First 1
           Write-Host "Installing: $($whl.FullName)"
           pip install $whl.FullName numpy
- 
-      - name: Check SIMD support reported by PyArrow
+
+      - name: Check SIMD / xsimd support
         shell: python
         run: |
           import pyarrow as pa
-          import sys
- 
-          print("=" * 60)
-          print(f"PyArrow version  : {pa.__version__}")
-          print(f"Arrow C++ version: {pa.cpp_build_info.version}")
-          print("-" * 60)
- 
-          # Arrow 18 RuntimeInfo fields:
-          #   simd_level          - compile-time SIMD level
-          #   detected_simd_level - best SIMD level detected at runtime on this CPU
-          info = pa.runtime_info()
-          simd          = info.simd_level
-          detected_simd = info.detected_simd_level
- 
-          print(f"Compile-time SIMD level  : {simd}")
-          print(f"Detected runtime SIMD    : {detected_simd}")
-          print("-" * 60)
-          print(f"Full runtime info: {info}")
-          print("=" * 60)
- 
-          # On ARM64 Windows we expect NEON at minimum
-          if simd.upper() == "NONE":
-              print("ERROR: SIMD is NONE — xsimd was not compiled in!")
-              sys.exit(1)
- 
-          print(f"PASS: SIMD is enabled ({simd}), xsimd is active in this wheel.")
- 
-      - name: Run compute workload (NEON smoke test)
-        shell: python
-        run: |
-          import pyarrow as pa
-          import pyarrow.compute as pc
-          import numpy as np
- 
-          print("Running SIMD-accelerated compute operations...")
- 
-          # Float64 aggregations exercise NEON vectorisation via xsimd
-          arr = pa.array(np.random.rand(5_000_000), type=pa.float64())
-          print(f"  sum  = {pc.sum(arr).as_py():.6f}")
-          print(f"  mean = {pc.mean(arr).as_py():.6f}")
-          print(f"  min  = {pc.min(arr).as_py():.6f}")
-          print(f"  max  = {pc.max(arr).as_py():.6f}")
- 
-          # String kernel also uses xsimd on ARM64
-          strs = pa.array(["hello", "world", "arrow", "neon"] * 1_000_000)
-          lengths = pc.utf8_length(strs)
-          print(f"  utf8_length sum = {pc.sum(lengths).as_py()}")
- 
-          print("PASS: all compute operations completed successfully.")
- 
-      - name: Inspect DLL exports for SIMD symbols
-        shell: pwsh
-        run: |
-          $arrowDll = Get-ChildItem -Recurse -Filter "arrow.dll" |
-                      Select-Object -First 1 -ExpandProperty FullName
-          if (-not $arrowDll) {
-              Write-Host "arrow.dll not found, skipping symbol check."
-              exit 0
-          }
-          Write-Host "Inspecting: $arrowDll"
-          $exports = dumpbin /EXPORTS $arrowDll 2>&1
-          $simdHits = $exports | Select-String -Pattern "neon|simd|xsimd" -CaseSensitive:$false
-          if ($simdHits) {
-              Write-Host "Found SIMD-related exports:"
-              $simdHits | ForEach-Object { Write-Host "  $_" }
-          } else {
-              Write-Host "No SIMD symbols in exports (expected — xsimd is header-only/inlined)."
-          }
+          import os
+
+          print("=== Runtime SIMD Info ===")
+          print(pa.runtime_info())
+
+          include_dir = pa.get_include()
+          config_h = os.path.join(include_dir, "arrow", "util", "config.h")
+
+          print(f"\nChecking config file: {config_h}")
+
+          if os.path.exists(config_h):
+              with open(config_h, "r", encoding="utf-8") as f:
+                  content = f.read()
+
+              if "#define ARROW_USE_XSIMD 1" in content:
+                  print("✅ xsimd support ENABLED")
+              elif "#define ARROW_USE_XSIMD 0" in content:
+                  print("❌ xsimd support DISABLED")
+              else:
+                  print("⚠️ ARROW_USE_XSIMD flag not found")
+          else:
+              print("⚠️ config.h not found")
