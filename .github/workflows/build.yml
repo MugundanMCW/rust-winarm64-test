@@ -45,40 +45,25 @@ jobs:
           print(f"Arrow C++ version: {pa.cpp_build_info.version}")
           print("-" * 60)
 
-          # Print all available build info attributes for visibility
-          build_info = pa.cpp_build_info
-          for attr in sorted(dir(build_info)):
-              if not attr.startswith("_"):
-                  try:
-                      print(f"  {attr}: {getattr(build_info, attr)}")
-                  except Exception:
-                      pass
-          print("-" * 60)
+          # pa.runtime_info() is the correct API across all Arrow versions.
+          # It returns a struct with simd_level and runtime_simd_level.
+          info = pa.runtime_info()
+          simd    = info.simd_level
+          rt_simd = info.runtime_simd_level
 
-          # Arrow 18 exposes simd_flags (list of active SIMD flags)
-          # Arrow 19+ exposes simd_level / runtime_simd_level
-          if hasattr(build_info, "simd_level"):
-              simd = build_info.simd_level
-              rt_simd = build_info.runtime_simd_level
-              print(f"Compile-time SIMD level : {simd}")
-              print(f"Runtime SIMD level      : {rt_simd}")
-              if simd.upper() == "NONE":
-                  print("ERROR: SIMD is NONE — xsimd was not compiled in!")
-                  sys.exit(1)
-          elif hasattr(build_info, "simd_flags"):
-              flags = build_info.simd_flags
-              print(f"SIMD flags: {flags}")
-              if not flags:
-                  print("ERROR: simd_flags is empty — xsimd was not compiled in!")
-                  sys.exit(1)
-          else:
-              print("WARNING: no SIMD attribute found on CppBuildInfo")
-
+          print(f"Compile-time SIMD level : {simd}")
+          print(f"Runtime SIMD level      : {rt_simd}")
           print("-" * 60)
           print("Full runtime info:")
-          print(pa.runtime_info())
+          print(info)
           print("=" * 60)
-          print("PASS: SIMD check completed.")
+
+          # On ARM64 Windows we expect NEON at minimum
+          if simd.upper() == "NONE":
+              print("ERROR: SIMD is NONE — xsimd was not compiled in!")
+              sys.exit(1)
+
+          print(f"PASS: SIMD is enabled ({simd}), xsimd is active in this wheel.")
 
       - name: Run compute workload (NEON smoke test)
         shell: python
@@ -89,18 +74,14 @@ jobs:
 
           print("Running SIMD-accelerated compute operations...")
 
+          # Float64 aggregations exercise NEON vectorisation via xsimd
           arr = pa.array(np.random.rand(5_000_000), type=pa.float64())
+          print(f"  sum  = {pc.sum(arr).as_py():.6f}")
+          print(f"  mean = {pc.mean(arr).as_py():.6f}")
+          print(f"  min  = {pc.min(arr).as_py():.6f}")
+          print(f"  max  = {pc.max(arr).as_py():.6f}")
 
-          total   = pc.sum(arr).as_py()
-          mean    = pc.mean(arr).as_py()
-          minimum = pc.min(arr).as_py()
-          maximum = pc.max(arr).as_py()
-
-          print(f"  sum  = {total:.6f}")
-          print(f"  mean = {mean:.6f}")
-          print(f"  min  = {minimum:.6f}")
-          print(f"  max  = {maximum:.6f}")
-
+          # String kernel also uses xsimd on ARM64
           strs = pa.array(["hello", "world", "arrow", "neon"] * 1_000_000)
           lengths = pc.utf8_length(strs)
           print(f"  utf8_length sum = {pc.sum(lengths).as_py()}")
@@ -123,5 +104,5 @@ jobs:
               Write-Host "Found SIMD-related exports:"
               $simdHits | ForEach-Object { Write-Host "  $_" }
           } else {
-              Write-Host "No SIMD symbols found in exports (expected for inlined xsimd)."
+              Write-Host "No SIMD symbols in exports (expected — xsimd is header-only/inlined)."
           }
