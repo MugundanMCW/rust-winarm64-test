@@ -1,7 +1,9 @@
 
 name: compare-boost-install-timing
 
-push:
+on:
+  push:
+    branches: main
 
 jobs:
   build:
