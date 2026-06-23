@@ -5,33 +5,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  compare:
-    strategy:
-      matrix:
-        os: [windows-2025, windows-11-arm]
 
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-11-arm
 
     steps:
       - name: Measure install-boost action time
         shell: powershell
         run: |
-          $start = Get-Date
-          echo "BOOST_START=$($start.ToString('o'))" >> $env:GITHUB_ENV
-
-      - name: Install Boost (MSVC)
-        uses: MarkusJx/install-boost@v2
-        id: install-boost
-        with:
-          boost_version: 1.89.0
-          toolset: msvc
-          arch: ${{ matrix.os == 'windows-11-arm' && 'aarch64' || 'x86' }}
-
-      - name: Print install-boost timing
-        shell: powershell
-        run: |
-          $start = [DateTime]::Parse($env:BOOST_START)
-          $elapsed = ((Get-Date) - $start).TotalSeconds
-
-          Write-Host "install-boost action took $elapsed seconds"
+          where python.exe
 
