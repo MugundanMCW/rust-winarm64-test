@@ -1,15 +1,14 @@
 
 name: compare-boost-install-timing
 
-on:
-  workflow_dispatch:
+push:
 
 jobs:
   build:
     runs-on: windows-11-arm
     steps:
       - name: Measure install-boost action time
-        shell: powershell
+        shell: cmd
         run: |
           where python.exe
 
