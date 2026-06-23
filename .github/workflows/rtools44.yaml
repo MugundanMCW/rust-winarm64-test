@@ -5,9 +5,8 @@ on:
   workflow_dispatch:
 
 jobs:
-
+  build:
     runs-on: windows-11-arm
-
     steps:
       - name: Measure install-boost action time
         shell: powershell
